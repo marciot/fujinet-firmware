@@ -898,6 +898,12 @@ void dcd_read(uint8_t ntx)
     // printf("sending sector %06x in %d groups\n", sector, ntx);
     
     uart_putc_raw(UART_ID, 'R');
+
+    uart_putc_raw(UART_ID, (active_disk_number >> 24) & 0xff);
+    uart_putc_raw(UART_ID, (active_disk_number >> 16) & 0xff);
+    uart_putc_raw(UART_ID, (active_disk_number >>  8) & 0xff);
+    uart_putc_raw(UART_ID,  active_disk_number        & 0xff);
+
     uart_putc_raw(UART_ID, (sector >> 16) & 0xff);
     uart_putc_raw(UART_ID, (sector >> 8) & 0xff);
     uart_putc_raw(UART_ID, sector & 0xff);
@@ -906,8 +912,8 @@ void dcd_read(uint8_t ntx)
     memset(payload, 0, sizeof(payload));
     payload[0] = 0x80;
     payload[1] = num_sectors-i;
-
-    uart_read_blocking(UART_ID, &payload[26], 512);
+    uart_read_blocking(UART_ID, &payload[ 6], 20);  // Sector tags
+    uart_read_blocking(UART_ID, &payload[26], 512); // Sector data
     for (int x=0; x<16; x++)
     {
       printf("%02x ", payload[26+x]);
@@ -988,11 +994,18 @@ OR
   // printf("writing sector %06x in %d groups\n", sector, ntx);
 
   uart_putc_raw(UART_ID, 'W');
+
+  uart_putc_raw(UART_ID, (active_disk_number >> 24) & 0xff);
+  uart_putc_raw(UART_ID, (active_disk_number >> 16) & 0xff);
+  uart_putc_raw(UART_ID, (active_disk_number >>  8) & 0xff);
+  uart_putc_raw(UART_ID,  active_disk_number        & 0xff);
+
   uart_putc_raw(UART_ID, (sector >> 16) & 0xff);
   uart_putc_raw(UART_ID, (sector >> 8) & 0xff);
   uart_putc_raw(UART_ID, sector & 0xff);
   sector++;
-  uart_write_blocking(UART_ID, &payload[26], 512);
+  uart_write_blocking(UART_ID, &payload[ 6], 20);  // Sector tags
+  uart_write_blocking(UART_ID, &payload[26], 512); // Sector data
   // for (int x=0; x<512; x++)
   // {
   //   printf("%02x ", payload[26+x]);

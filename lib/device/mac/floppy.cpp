@@ -3,6 +3,8 @@
 #include "../bus/mac/mac_ll.h"
 #include <cstring>
 
+#include "floppy_serial.h"
+
 #define NS_PER_BIT_TIME 125
 #define BLANK_TRACK_LEN 6400
 
@@ -335,19 +337,28 @@ void macFloppy::dcd_status(uint8_t* payload)
 
 void macFloppy::process(mac_cmd_t cmd)
 {
+  uint32_t disk_num;
   uint32_t sector_num;
   uint8_t buffer[512];
-  char s[3];
+  uint8_t tags[20];
+  uint8_t s[7];
 
   switch (cmd)
   {
   case 'R':
-    fnUartBUS.readBytes(s, 3);
-    sector_num = ((uint32_t)s[0] << 16) + ((uint32_t)s[1] << 8) + (uint32_t)s[2];
+    memset(tags,0,sizeof(tags));
+
+    fnUartBUS.readBytes(s, 7);
+    disk_num   = ((uint32_t)s[0] << 24) + ((uint32_t)s[1] << 16) + ((uint32_t)s[2] << 8) + (uint32_t)s[3];
+    sector_num =                          ((uint32_t)s[4] << 16) + ((uint32_t)s[5] << 8) + (uint32_t)s[6];
     Debug_printf("\nDCD sector request: %06lx", sector_num);
-    if (_disk->read(sector_num, buffer))
-      Debug_printf("\nError Reading Sector %06lx",sector_num);
-    // todo: error handling
+
+    if (!is_mac_serial_io(disk_num, sector_num, tags, buffer, MAC_SERIAL_READ)) {
+      if (_disk->read(sector_num, buffer))
+        Debug_printf("\nError Reading Sector %06lx",sector_num);
+      // todo: error handling
+    }
+    fnUartBUS.write(tags,   sizeof(tags));
     fnUartBUS.write(buffer, sizeof(buffer));
     break;
   case 'T':
@@ -364,18 +375,24 @@ void macFloppy::process(mac_cmd_t cmd)
     // uart_putc_raw(UART_ID, sector & 0xff);
     // sector++;
     // uart_write_blocking(UART_ID, &payload[26], 512);
-    fnUartBUS.readBytes(s, 3);
+    fnUartBUS.readBytes(s, 7);
+    fnUartBUS.readBytes(tags,   sizeof(tags));
     fnUartBUS.readBytes(buffer, sizeof(buffer));
-    sector_num = ((uint32_t)s[0] << 16) + ((uint32_t)s[1] << 8) + (uint32_t)s[2];
+    disk_num   = ((uint32_t)s[0] << 24) + ((uint32_t)s[1] << 16) + ((uint32_t)s[2] << 8) + (uint32_t)s[3];
+    sector_num =                          ((uint32_t)s[4] << 16) + ((uint32_t)s[5] << 8) + (uint32_t)s[6];
     Debug_printf("\nDCD sector write: %06lx", sector_num);
-    if (_disk->write(sector_num, buffer))
-    {
-      Debug_printf("\nError Writing Sector %06lx", sector_num);
-      fnUartBUS.write('e');
-    }
-    else
-    {
+    if (is_mac_serial_io(disk_num, sector_num, tags, buffer, MAC_SERIAL_WRITE)) {
       fnUartBUS.write('w');
+    } else {
+      if (_disk->write(sector_num, buffer))
+      {
+        Debug_printf("\nError Writing Sector %06lx", sector_num);
+        fnUartBUS.write('e');
+      }
+      else
+      {
+        fnUartBUS.write('w');
+      }
     }
     break;
   default:
